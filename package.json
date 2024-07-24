@@ -1,0 +1,24 @@
+{
+  "name": "tab-reopen-key-on-incognito-mode",
+  "version": "2.0.0",
+  "main": "service_worker.js",
+  "scripts": {
+    "tsc": "tsc",
+    "build": "webpack",
+    "build-crx": "cross-env npm run build && node_modules/.bin/crx pack ./ -o Tab-reopen-key-on-incognito-mode.crx",
+    "watch": "webpack --watch"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "chrome-types": "^0.1.294",
+    "cross-env": "^7.0.3",
+    "crx": "^5.0.1",
+    "dotenv": "^16.4.5",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.5.4",
+    "webpack": "^5.93.0",
+    "webpack-cli": "^5.1.4"
+  }
+}
