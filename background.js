@@ -4,6 +4,21 @@ var REMLIST = []
 var lastActiveTabId;
 var lastActiveWinId;
 
+chrome.tabs.create({ url: chrome.runtime.getURL("debug.html") });
+
+function printStates(event) {
+    console.log({ TABS, WINS, REMLIST, lastActiveTabId, lastActiveWinId });
+
+    chrome.tabs.query({ url: "chrome-extension://alkfhfgkepamooonkjdolamnbilhkmjg/debug.html" }, tabs => {
+        if (tabs.length > 0) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+                command: "print-states",
+                TABS, WINS, REMLIST, lastActiveTabId, lastActiveWinId, event, date: new Date().toLocaleString()
+            });
+        }
+    });
+}
+
 async function main() {
     await getAllTabs();
     await getAllWins();
@@ -11,6 +26,7 @@ async function main() {
     // onCreated event
     chrome.tabs.onCreated.addListener(tab => {
         rewriteTABSbytab(tab);
+        printStates("[EVENT] tabs.onCreated");
     });
 
     // onUpdated event
@@ -20,26 +36,32 @@ async function main() {
                 TABS[tabId][key] = changeInfo[key];
             }
         }
+        printStates("[EVENT] tabs.onUpdated");
     });
 
     chrome.tabs.onMoved.addListener(() => {
         getAllTabs();
         getAllWins();
+        printStates("[EVENT] tabs.onMoved");
     });
     chrome.tabs.onAttached.addListener(() => {
         getAllTabs();
         getAllWins();
+        printStates("[EVENT] tabs.onAttached");
     });
     chrome.tabs.onActivated.addListener((activeInfo) => {
         lastActiveTabId = activeInfo.tabId;
         lastActiveWinId = activeInfo.windowId;
+        printStates("[EVENT] tabs.onActivated");
     });
     chrome.windows.onCreated.addListener(window => {
         getAllTabs();
         getAllWins();
+        printStates("[EVENT] windows.onCreated");
     })
     chrome.windows.onBoundsChanged.addListener(window => {
         getAllWins();
+        printStates("[EVENT] windows.onBoundsChanged");
     })
 
     // onRemoved event
@@ -72,12 +94,17 @@ async function main() {
 
         // remove from TABS
         delete TABS[tabId];
+        printStates("[EVENT] tabs.onRemoved");
     });
 
     // add to chrome commands
     chrome.commands.onCommand.addListener((command, tab) => {
         if (command == "reopen_tab") {
             command_restore();
+        } else if (command == "open-debug-tab") {
+            chrome.tabs.create({ url: chrome.runtime.getURL("debug.html") });
+        } else if (command == "print-states") {
+            chrome.windows.create({ url: chrome.runtime.getURL("debug.html") });
         }
     });
 

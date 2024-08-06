@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Popup</title>
+</head>
+<body>
+    <button onclick="chrome.runtime.sendMessage({command: 'open-debug-tab'})">Debug<br/>(tab)</button>
+    <button onclick="chrome.runtime.sendMessage({command: 'open-debug-window'})">Debug<br/>(window)</button>
+    
+</body>
+</html>

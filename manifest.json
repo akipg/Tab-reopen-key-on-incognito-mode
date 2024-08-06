@@ -11,6 +11,13 @@
          }
       }
    },
+   "browser_action": {
+      "default_popup": "popup.html",
+      "default_icon": {
+         "16": "images/icon-16.png",
+         "128": "images/icon-128.png"
+      }
+   },
    "description": "This extension enables {Ctrl+Shift+T} shortcut key to reopen tabs/windows on Incognito mode.",
    "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApvKiO8oA/QoaTn5bsKJ/vmpLc50TajyvwbNv1O2G+5wtB12v3WJt5fyOhgBEYx8/CV/uIu5IFCKSPhucI+Fhbxgew4DpUREl3TfxY4xU5q65AFa3xL4M/t1Eldk5a0DszSGCTyAlPY6xw+ii5fHC5WC+IEvJlj3D4SZytGYIEVQM6wrPZeWjCdmEH7jos5sGrC2c3y3Khfko/WJN/l7k0oxy+EXzJm8AuxqnMUpWHVH+iibZPYgpI9mCwRjIGGLWN+lQYg/J7On24Ck67bW9V36IyWhmLZ2hy4Cz/StVbd+ngBku9mUbM9d/YkHYEYjltopOHScLbsU9KR0o3MwIUwIDAQAB",
    "manifest_version": 2,
