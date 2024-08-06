@@ -52,6 +52,8 @@ async function main() {
     chrome.tabs.onActivated.addListener((activeInfo) => {
         lastActiveTabId = activeInfo.tabId;
         lastActiveWinId = activeInfo.windowId;
+        getAllTabs();
+        getAllWins();
         printStates("[EVENT] tabs.onActivated");
     });
     chrome.windows.onCreated.addListener(window => {
