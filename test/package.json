@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "scripts": {
+    "start": "jest ."
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "puppeteer": "^23.0.1"
+  }
+}
