@@ -72,7 +72,8 @@ async function main() {
         REMLIST.unshift(rem);
         Object.assign(rem, TABS[tabId]);
         // when closing a window
-        if (removeInfo.isWindowClosing) {
+        console.log("isWindowClosing", removeInfo.isWindowClosing, removeInfo)
+        if (removeInfo.isWindowClosing || WINS[removeInfo.windowId].nTabs == 1) {
             rem.isWindowClosed = true;
             rem.tabId = tabId;
             rem.active = TABS[tabId].active;
@@ -96,6 +97,7 @@ async function main() {
 
         // remove from TABS
         delete TABS[tabId];
+        WINS[removeInfo.windowId].nTabs--;
         printStates("[EVENT] tabs.onRemoved");
     });
 
@@ -129,7 +131,10 @@ function getAllWins() {
     return new Promise((resolve) => {
         chrome.windows.getAll({}, wins => {
             for (win of wins) {
-                WINS[win.id] = win;
+                chrome.tabs.query({ windowId: win.id }, tabs => {
+                    WINS[win.id] = win;
+                    WINS[win.id].nTabs = tabs.length;
+                });
             }
             resolve();
         });
