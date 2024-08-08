@@ -185,8 +185,8 @@ test('[MV2] Single normal tab open -> close -> reopen', async () => {
   expect(tabs[tabs.length-1].active).toBe(true);
   
   const pageSourceHTML = await debugPage.content();
-  fs.writeFileSync('debug-result.html', pageSourceHTML);
-  await debugPage.screenshot({ path: 'debug.png' });
+  fs.writeFileSync(`debug-result-${expect.getState().currentTestName}.html`, pageSourceHTML);
+  await debugPage.screenshot({ path: `debug-result-${expect.getState().currentTestName}.png` });
 
 });
 
