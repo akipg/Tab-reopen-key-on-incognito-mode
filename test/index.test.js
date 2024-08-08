@@ -185,8 +185,9 @@ test('[MV2] Single normal tab open -> close -> reopen', async () => {
   expect(tabs[tabs.length-1].active).toBe(true);
   
   const pageSourceHTML = await debugPage.content();
-  fs.writeFileSync(`debug-result-${expect.getState().currentTestName}.html`, pageSourceHTML);
-  await debugPage.screenshot({ path: `debug-result-${expect.getState().currentTestName}.png` });
+  const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
+  fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
+  await debugPage.screenshot({ path: `${pathStem}.png` });
 
 });
 
