@@ -67,8 +67,6 @@ async function main() {
     chrome.tabs.onActivated.addListener((activeInfo) => {
         lastActiveTabId = activeInfo.tabId;
         lastActiveWinId = activeInfo.windowId;
-        getAllTabs();
-        getAllWins();
         printStates("[EVENT] tabs.onActivated");
     });
     chrome.windows.onCreated.addListener(window => {
@@ -87,8 +85,7 @@ async function main() {
         REMLIST.unshift(rem);
         Object.assign(rem, TABS[tabId]);
         // when closing a window
-        console.log("isWindowClosing", removeInfo.isWindowClosing, removeInfo)
-        if (removeInfo.isWindowClosing || WINS[removeInfo.windowId].nTabs == 1) {
+        if (removeInfo.isWindowClosing) {
             rem.isWindowClosed = true;
             rem.tabId = tabId;
             rem.active = TABS[tabId].active;
@@ -112,8 +109,6 @@ async function main() {
 
         // remove from TABS
         delete TABS[tabId];
-        WINS[removeInfo.windowId].nTabs--;
-        printStates("[EVENT] tabs.onRemoved");
     });
 
     // add to chrome commands
@@ -146,10 +141,7 @@ function getAllWins() {
     return new Promise((resolve) => {
         chrome.windows.getAll({}, wins => {
             for (win of wins) {
-                chrome.tabs.query({ windowId: win.id }, tabs => {
-                    WINS[win.id] = win;
-                    WINS[win.id].nTabs = tabs.length;
-                });
+                WINS[win.id] = win;
             }
             resolve();
         });
