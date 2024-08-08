@@ -4,7 +4,20 @@ var REMLIST = []
 var lastActiveTabId;
 var lastActiveWinId;
 
-chrome.tabs.create({ url: chrome.runtime.getURL("debug.html") });
+// chrome.tabs.create({ url: chrome.runtime.getURL("debug.html") });
+
+self.debug_command_restore = function(){
+    command_restore();
+    return true;
+}
+
+self.getAllTabs = function(){
+    return new Promise((resolve) => {
+        chrome.tabs.query({}, tabs => 
+            resolve(tabs)
+        );
+    });
+};
 
 function printStates(event) {
     console.log({ TABS, WINS, REMLIST, lastActiveTabId, lastActiveWinId });
@@ -18,6 +31,8 @@ function printStates(event) {
         }
     });
 }
+
+self.printStates = printStates;
 
 async function main() {
     await getAllTabs();
@@ -153,6 +168,7 @@ function rewriteTABSbytab(tab) {
 
 
 async function command_restore(tab_command) {
+    printStates("[COMMAND] BEFORE command_restore");
     let rem_last = REMLIST.shift();
     // init or not incognito
     if (!rem_last || !rem_last.incognito) {
@@ -227,6 +243,7 @@ async function command_restore(tab_command) {
             windowId: rem_last.windowId
         })
     }
+    printStates("[COMMAND] AFTER command_restore");
 }
 
 
