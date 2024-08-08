@@ -1,7 +1,7 @@
 {
   "type": "module",
   "scripts": {
-    "start": "jest ."
+    "test": "cd test && jest ."
   },
   "devDependencies": {
     "jest": "^29.7.0",
