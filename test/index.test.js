@@ -23,14 +23,18 @@ const { debug } = require('console');
 const EXTENSION_PATH = path.join(process.cwd(), '../');
 const EXTENSION_ID = 'alkfhfgkepamooonkjdolamnbilhkmjg';
 
+const DEFAULT_WIN_OFFSET = 1;
+const TEST_SERVER = `http://localhost:3000`;
+
 let browser;
 let backgroundPage;
 let debugPage;
+let debugWin;
 let worker;
 
 beforeEach(async () => {
   browser = await puppeteer.launch({
-    headless: true,
+    headless: false,
     // slowMo: 50,
     devtools: false,
     args: [
@@ -84,14 +88,22 @@ beforeEach(async () => {
   // worker = await workerTarget.worker();
 
 
+  debugWin = await worker.evaluate(
+    async () => 
+      new Promise((resolve) => {
+        self.chrome.windows.getAll(wins => resolve(wins[0]) );
+      })
+  );
+
 
   debugPage = await browser.newPage();
   await debugPage.goto(`chrome-extension://${EXTENSION_ID}/debug.html`);
+  console.log("debugPage", debugPage);
 
 });
 
 afterEach(async () => {
-  await browser.close();
+  // await browser.close();
   browser = undefined;
 });
 
@@ -130,8 +142,183 @@ async function stopServiceWorker(browser, extensionId) {
 //   await page.waitForSelector('#response-1');
 // });
 
-test('[MV2] Single normal tab open -> close -> reopen', async () => {
-  
+
+
+
+
+
+test.only('[MV2] Random', async () => {
+
+  const commands = [
+    { command: 'createWindow', createData: { incognito: true } },
+    { command: 'updateTab', win: 0, tab: 0, updateProperties: { url: `${TEST_SERVER}/0` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/1` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/2` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/3` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/4` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/5` } },
+    { command: 'removeTab', win: 0, tab: 5 },
+    { command: 'restore' },
+  ]
+
+  const win_offset = DEFAULT_WIN_OFFSET;
+
+  let WINS = {};
+  let TABS = {};
+  let REMLIST = [];
+  for (const command of commands) {
+    console.log(command);
+
+    if (command.win !== undefined) {
+      const wins = await worker.evaluate(async () => await self.getAllWins());
+      console.log("wins", wins.length, command.win, win_offset, wins)
+      command.win = wins[command.win + win_offset];
+      console.log("win", command.win)
+      expect(command.win).not.toBe(undefined);
+
+      if (command.tab !== undefined) {
+        const tabs = await worker.evaluate(
+          async (windowId, index) => 
+            new Promise((resolve) => {
+              const _tabs = self.chrome.tabs.query({ windowId, index }, _tabs => resolve(_tabs) );
+            })
+        , command.win.id, command.tab);
+        command.tab = tabs[0];
+        expect(command.tab).not.toBe(undefined);
+      }
+    }
+
+    if (command.command === 'restore') {
+      const tabToRestore = REMLIST.pop();
+      TABS[tabToRestore.id] = tabToRestore;        
+      if(tabToRestore.isWindowClosedByClosingTab || tabToRestore.isWindowClosedByClosingWindow) {
+        // WINS[tabToRestore.windowId] = tabToRestore;
+      }
+
+      const ret = await worker.evaluate(async () =>
+        new Promise((resolve) => {
+          const _ret = self.debug_command_restore();
+          resolve(_ret);
+        })
+      );
+    }
+    else if (command.command === 'createWindow') {
+      var tf = true;
+      const win = await worker.evaluate(
+        async (command) => 
+            await self.createWindow(command.createData)
+      , command);
+      WINS[win.id] = win;
+    }
+    else if (command.command === 'createTab') {
+      command.createProperties.windowId = command.win.id;
+      const tab = await worker.evaluate(async (command) =>
+        new Promise((resolve) => {
+          self.chrome.tabs.create(command.createProperties, tab =>
+            resolve(tab)
+          );
+        })
+      , command);
+
+      const tab2 = await worker.evaluate(async (tabId) =>
+        new Promise((resolve) => {
+          self.chrome.tabs.get(tabId, tab =>
+            resolve(tab)
+          );
+        })
+      , tab.id);
+
+      TABS[tab.id] = tab2;
+    }
+    else if (command.command === 'updateTab') {
+      const tab = await worker.evaluate(async (command) =>
+        new Promise((resolve) => {
+          self.chrome.tabs.update(command.tab.id, command.updateProperties, tab =>
+            resolve(tab)
+          );
+        })
+      , command);
+
+      const tab2 = await worker.evaluate(async (tabId) =>
+        new Promise((resolve) => {
+          self.chrome.tabs.get(tabId, tab =>
+            resolve(tab)
+          );
+        })
+      , command.tab.id);
+
+      console.log("updateTab", "tab", tab, "tab2", tab2);
+
+      TABS[tab.id] = tab2;
+    }
+    else if (command.command === 'removeTab') {
+      const nTabs = await worker.evaluate(async (command) =>
+        new Promise((resolve) => 
+          self.chrome.tabs.query({ windowId: command.win.id }, _tabs => resolve(_tabs.length) )
+        )
+      , command);
+      await worker.evaluate(async (command) =>
+        new Promise((resolve) => {
+          self.chrome.tabs.remove(command.tab.id, () =>
+            resolve()
+          );
+        })
+      , command);
+      REMLIST.push(TABS[command.tab.id]);
+      delete TABS[command.tab.id];
+      if (nTabs == 1) {
+        REMLIST[REMLIST.length - 1].isWindowClosedByClosingTab = true;
+        REMLIST[REMLIST.length - 1].isWindowClosedByClosingWindow = false;
+        delete WINS[command.win.id];
+      }
+    }
+  }
+
+
+
+  // Evaluate
+  const tabsExist = await worker.evaluate(async () => {
+    return await self.getAllTabs();
+  });
+  const winsExist = await worker.evaluate(async () => {
+    return await self.getAllWins();
+  });
+
+  console.log("tabExist", tabsExist.map(tab => String([tab.windowId, tab.index, tab.id, tab.url])));
+  console.log("TABS", Object.keys(TABS).map(tabId => {
+    const tab = TABS[tabId];
+    return String([tab.windowId, tab.index, tab.id, tab.url])
+  }));
+
+  for (const tabExist of tabsExist) {
+    if(tabExist.windowId === debugWin.id) {
+      continue;
+    }
+    const urls = Object.keys(TABS).map(tabId => (TABS[tabId].pendingUrl || TABS[tabId].url));
+    console.log("Check", "urls", urls, "includes", "tabExist.url", tabExist.url, "to be", true, "=>", urls.includes(tabExist.url) );
+    expect(urls.includes(tabExist.url)).toBe(true); 
+  }
+
+  // for (const tabExist of tabsExist) {
+   for (const tabId of Object.keys(TABS)) {
+    const tabToBe = TABS[tabId];
+
+    const urlsExist = tabsExist.map(tab => (tab.pendingUrl || tab.url));
+    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.url", tabToBe.url, "to be", true, "=>", urlsExist.includes(tabToBe.url) );
+    expect(urlsExist.includes(tabToBe.pendingUrl || tabToBe.url)).toBe(true); 
+  }
+
+  const pageSourceHTML = await debugPage.content();
+  const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
+  fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
+  await debugPage.screenshot({ path: `${pathStem}.png` });
+
+});
+
+
+
+test('[MV2] Single incognito tab open -> close -> reopen', async () => {
+
   // Get worker
   // const host = `chrome-extension://${EXTENSION_ID}`;
   // const target = await browser.waitForTarget((t) => {
@@ -139,29 +326,52 @@ test('[MV2] Single normal tab open -> close -> reopen', async () => {
   // });
   // worker = await target.worker();
   // console.log(worker);
-  
+
   // const backgroundPageTarget = await browser.waitForTarget(
   //   target => target.type() === 'background_page'
   // );
   // worker = await backgroundPageTarget.page();
   // console.log(worker);
 
-  // Open and close a google tab
+  // Open and close a google tab in incognito mode
+  // const incognitoBrowser = await puppeteer.launch({
+  //   headless: false,
+  //   // slowMo: 50,
+  //   devtools: false,
+  //   args: [
+  //     `--disable-extensions-except=${EXTENSION_PATH}`,
+  //     `--load-extension=${EXTENSION_PATH}`,
+  //     `--window-size=1920,1080`,
+  //     `--incognito`
+  //   ],
+  //   defaultViewport: {
+  //     width: 1920,
+  //     height: 1080
+  //   }
+  // });
+  // const incognito = await browser.createIncognitoBrowserContext();
+  // const incognito = await incognitoBrowser.defaultBrowserContext();
+  // const page = await incognito.newPage();
+
+  await worker.evaluate(async () => {
+    return await self.createWindow({ incognito: true });
+  });
+
   const page = await browser.newPage();
-  await page.goto('https://www.google.com');  
-  await page.close(); 
+  await page.goto('https://www.google.com');
+  await page.close();
   const noGoogleTab = await (async () => {
-      const tabs = await worker.evaluate(async () => await self.getAllTabs());
-      let tf = true;
-      for (const tab of tabs) {
-        if (tab.url === 'https://www.google.com/') {
-          tf = false;
-          break;
-        }
+    const tabs = await worker.evaluate(async () => await self.getAllTabs());
+    let tf = true;
+    for (const tab of tabs) {
+      if (tab.url === 'https://www.google.com/') {
+        tf = false;
+        break;
       }
-      return tf;
+    }
+    return tf;
   })();
- expect(noGoogleTab).toBe(true);
+  expect(noGoogleTab).toBe(true);
 
   // Restore the tab
   let restoreCommandRet = await worker.evaluate(async () => {
@@ -173,23 +383,91 @@ test('[MV2] Single normal tab open -> close -> reopen', async () => {
   // Check if the tab is restored
   const tabs = await worker.evaluate(async () => {
     return await self.getAllTabs();
- });
-//  const tabs = await worker.evaluate(async () => {
-//   return await self.chrome.tabs.query({})
-// });
-  console.log(tabs);
+  });
+  const wins = await worker.evaluate(async () => {
+    return await self.getAllWins();
+  });
+  //  const tabs = await worker.evaluate(async () => {
+  //   return await self.chrome.tabs.query({})
+  // });
+  console.log(tabs.length);
+  console.log(wins.length);
 
-  expect(tabs).not.toBe(undefined);
-  expect(tabs.length >= 2).toBe(true);
-  expect(tabs[tabs.length-1].url).toBe('https://www.google.com/');
-  expect(tabs[tabs.length-1].active).toBe(true);
-  
+  // expect(tabs).not.toBe(undefined);
+  // expect(tabs.length >= 2).toBe(true);
+  // expect(tabs[tabs.length-1].url).toBe('https://www.google.com/');
+  // expect(tabs[tabs.length-1].active).toBe(true);
+
   const pageSourceHTML = await debugPage.content();
   const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
   fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
   await debugPage.screenshot({ path: `${pathStem}.png` });
 
 });
+
+
+
+test('[MV2] Single normal tab open -> close -> reopen', async () => {
+
+  // Get worker
+  // const host = `chrome-extension://${EXTENSION_ID}`;
+  // const target = await browser.waitForTarget((t) => {
+  //   return t.type() === 'service_worker' && t.url().startsWith(host);
+  // });
+  // worker = await target.worker();
+  // console.log(worker);
+
+  // const backgroundPageTarget = await browser.waitForTarget(
+  //   target => target.type() === 'background_page'
+  // );
+  // worker = await backgroundPageTarget.page();
+  // console.log(worker);
+
+  // Open and close a google tab
+  const page = await browser.newPage();
+  await page.goto('https://www.google.com');
+  await page.close();
+  const noGoogleTab = await (async () => {
+    const tabs = await worker.evaluate(async () => await self.getAllTabs());
+    let tf = true;
+    for (const tab of tabs) {
+      if (tab.url === 'https://www.google.com/') {
+        tf = false;
+        break;
+      }
+    }
+    return tf;
+  })();
+  expect(noGoogleTab).toBe(true);
+
+  // Restore the tab
+  let restoreCommandRet = await worker.evaluate(async () => {
+    return await self.debug_command_restore();
+  });
+  expect(restoreCommandRet).toBe(true);
+
+
+  // Check if the tab is restored
+  const tabs = await worker.evaluate(async () => {
+    return await self.getAllTabs();
+  });
+  //  const tabs = await worker.evaluate(async () => {
+  //   return await self.chrome.tabs.query({})
+  // });
+  console.log(tabs);
+
+  expect(tabs).not.toBe(undefined);
+  expect(tabs.length >= 2).toBe(true);
+  expect(tabs[tabs.length - 1].url).toBe('https://www.google.com/');
+  expect(tabs[tabs.length - 1].active).toBe(true);
+
+  const pageSourceHTML = await debugPage.content();
+  const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
+  fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
+  await debugPage.screenshot({ path: `${pathStem}.png` });
+
+});
+
 
 
 

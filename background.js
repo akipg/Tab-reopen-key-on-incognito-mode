@@ -19,6 +19,31 @@ self.getAllTabs = function(){
     });
 };
 
+self.getAllWins = function(){
+    return new Promise((resolve) => {
+        chrome.windows.getAll({}, wins => 
+            resolve(wins)
+        );
+    });
+};
+
+
+self.createWindow = function(createOption){
+    return new Promise((resolve) => {
+        chrome.windows.create(createOption, win => 
+            resolve(win)
+        );
+    });
+}
+
+self.createTab = function(createProperties){
+    return new Promise((resolve) => {
+        chrome.tabs.create(createProperties, tab =>
+            resolve(tab)
+        );
+    });
+}
+
 function printStates(event) {
     console.log({ TABS, WINS, REMLIST, lastActiveTabId, lastActiveWinId });
 
