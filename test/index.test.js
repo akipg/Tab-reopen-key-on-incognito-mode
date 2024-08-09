@@ -328,10 +328,10 @@ async function doCheck(state){
     return await self.getAllWins();
   });
 
-  console.log("tabExist", tabsExist.map(tab => String([tab.windowId, tab.index, tab.id, tab.url])));
+  console.log("tabExist", tabsExist.map(tab => String([tab.windowId, tab.index, tab.id, tab.pendingUrl || tab.url])));
   console.log("TABS", Object.keys(TABS).map(tabId => {
     const tab = TABS[tabId];
-    return String([tab.windowId, tab.index, tab.id, tab.url])
+    return String([tab.windowId, tab.index, tab.id, tab.pendingUrl || tab.url])
   }));
 
   for (const tabExist of tabsExist) {
@@ -347,10 +347,17 @@ async function doCheck(state){
   for (const tabId of Object.keys(TABS)) {
     const tabToBe = TABS[tabId];
 
-    const urlsExist = tabsExist.map(tab => (tab.pendingUrl || tab.url));
-    const tf = urlsExist.includes(tabToBe.pendingUrl || tabToBe.url);
-    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.pendingUrl || tabToBe.url", tabToBe.pendingUrl || tabToBe.url, "to be", true, "=>", tf);
-    expect(tf).toBe(true);
+    const urlsExist = [];
+    for (const tabExist of tabsExist) {
+      if(tabExist.windowId === debugWin.id){
+        continue
+      }
+      urlsExist.push(tabExist.pendingUrl || tabExist.url);
+    }
+    const tf2 = urlsExist.includes(tabToBe.pendingUrl || tabToBe.url);
+    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.pendingUrl || tabToBe.url", tabToBe.pendingUrl || tabToBe.url, "to be", true, "=>", tf2);
+    console.log("tf2", tf2)
+    expect(tf2).toBe(true);
   }
 }
 
