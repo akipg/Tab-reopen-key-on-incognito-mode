@@ -24,6 +24,7 @@ const EXTENSION_PATH = path.join(process.cwd(), '../');
 const EXTENSION_ID = 'alkfhfgkepamooonkjdolamnbilhkmjg';
 
 const DEFAULT_WIN_OFFSET = 1;
+const DEFAULT_DELAY = 200;
 const TEST_SERVER = `http://localhost:3000`;
 
 let browser;
@@ -89,9 +90,9 @@ beforeEach(async () => {
 
 
   debugWin = await worker.evaluate(
-    async () => 
+    async () =>
       new Promise((resolve) => {
-        self.chrome.windows.getAll(wins => resolve(wins[0]) );
+        self.chrome.windows.getAll(wins => resolve(wins[0]));
       })
   );
 
@@ -103,7 +104,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  const pageSourceHTML = await debugPage.content();
+  const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
+  fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
+  await debugPage.screenshot({ path: `${pathStem}.png` });
   // await browser.close();
+
   browser = undefined;
 });
 
@@ -143,11 +149,216 @@ async function stopServiceWorker(browser, extensionId) {
 // });
 
 
+const sleep = msec => new Promise(resolve => setTimeout(resolve, msec));
+
+
+async function doCommand(command, stete, delay) {
+  const { TABS, WINS, REMLIST } = stete;
+  const win_offset = DEFAULT_WIN_OFFSET;
+
+  console.log(command);
+  if(delay > 0){
+    await sleep(delay);
+  }
+
+  if (command.win !== undefined) {
+    const wins = await worker.evaluate(async () => await self.getAllWins());
+    console.log("wins", wins.length, command.win, win_offset, wins)
+    command.win = wins[command.win + win_offset];
+    console.log("win", command.win)
+    expect(command.win).not.toBe(undefined);
+
+    if (command.tab !== undefined) {
+      const tabs = await worker.evaluate(
+        async (windowId, index) =>
+          new Promise((resolve) => {
+            const _tabs = self.chrome.tabs.query({ windowId, index }, _tabs => resolve(_tabs));
+          })
+        , command.win.id, command.tab);
+      command.tab = tabs[0];
+      expect(command.tab).not.toBe(undefined);
+    }
+  }
+
+  if (command.command === 'restore') {
+    const tabToRestore = REMLIST.pop();
+    TABS[tabToRestore.id] = tabToRestore;
+    if (tabToRestore.isWindowClosedByClosingTab || tabToRestore.isWindowClosedByClosingWindow) {
+      // WINS[tabToRestore.windowId] = tabToRestore;
+    }
+
+    // const debug_command_restore_ret = await worker.evaluate(async () =>
+    //   new Promise((resolve) => {
+    //     const _ret = self.debug_command_restore().then(
+    //       () => resolve(true)
+    //     );
+    //   })
+    // );
+    const debug_command_restore_ret = await worker.evaluate(async () =>
+      await self.debug_command_restore()
+  );
+  expect(debug_command_restore_ret).toBe(true);
+  }
+  else if (command.command === 'createWindow') {
+    var tf = true;
+    const win = await worker.evaluate(
+      async (command) =>
+        await self.createWindow(command.createData)
+      , command);
+    WINS[win.id] = win;
+  }
+  else if (command.command === 'createTab') {
+    command.createProperties.windowId = command.win.id;
+    const tab = await worker.evaluate(async (command) =>
+      new Promise((resolve) => {
+        self.chrome.tabs.create(command.createProperties, tab =>
+          resolve(tab)
+        );
+      })
+      , command);
+
+    const tab2 = await worker.evaluate(async (tabId) =>
+      new Promise((resolve) => {
+        self.chrome.tabs.get(tabId, tab =>
+          resolve(tab)
+        );
+      })
+      , tab.id);
+
+    TABS[tab.id] = tab2;
+  }
+  else if (command.command === 'updateTab') {
+    const tab = await worker.evaluate(async (command) =>
+      new Promise((resolve) => {
+        self.chrome.tabs.update(command.tab.id, command.updateProperties, tab =>
+          resolve(tab)
+        );
+      })
+      , command);
+
+    const tab2 = await worker.evaluate(async (tabId) =>
+      new Promise((resolve) => {
+        self.chrome.tabs.get(tabId, tab =>
+          resolve(tab)
+        );
+      })
+      , command.tab.id);
+
+    console.log("updateTab", "tab", tab, "tab2", tab2);
+
+    TABS[tab.id] = tab2;
+  }
+  else if (command.command === 'removeTab') {
+    const nTabs = await worker.evaluate(async (command) =>
+      new Promise((resolve) =>
+        self.chrome.tabs.query({ windowId: command.win.id }, _tabs => resolve(_tabs.length))
+      )
+      , command);
+    await worker.evaluate(async (command) =>
+      new Promise((resolve) => {
+        self.chrome.tabs.remove(command.tab.id, () =>
+          resolve()
+        );
+      })
+      , command);
+
+    // Check if the tab is removed
+    const tabs = await worker.evaluate(async () => await self.getAllTabs());
+    let tab_remove_success = true;
+    for (const tab of tabs) {
+      if (tab.id === command.tab.id) {
+        tab_remove_success = false;
+        break;
+      }
+    }
+    expect(tab_remove_success).toBe(true);
+
+    REMLIST.push(TABS[command.tab.id]);
+    delete TABS[command.tab.id];
+    if (nTabs == 1) {
+      REMLIST[REMLIST.length - 1].isWindowClosedByClosingTab = true;
+      REMLIST[REMLIST.length - 1].isWindowClosedByClosingWindow = false;
+      delete WINS[command.win.id];
+    }
+  }
+
+  return { TABS, WINS, REMLIST };
+
+}
+
+
+
+async function doCheck(state){
+  const { TABS, WINS, REMLIST } = state
+   // Evaluate
+   const tabsExist = await worker.evaluate(async () => {
+    return await self.getAllTabs();
+  });
+  const winsExist = await worker.evaluate(async () => {
+    return await self.getAllWins();
+  });
+
+  console.log("tabExist", tabsExist.map(tab => String([tab.windowId, tab.index, tab.id, tab.url])));
+  console.log("TABS", Object.keys(TABS).map(tabId => {
+    const tab = TABS[tabId];
+    return String([tab.windowId, tab.index, tab.id, tab.url])
+  }));
+
+  for (const tabExist of tabsExist) {
+    if (tabExist.windowId === debugWin.id) {
+      continue;
+    }
+    const urls = Object.keys(TABS).map(tabId => (TABS[tabId].pendingUrl || TABS[tabId].url));
+    console.log("Check", "urls", urls, "includes", "tabExist.url", tabExist.url, "to be", true, "=>", urls.includes(tabExist.url));
+    expect(urls.includes(tabExist.url)).toBe(true);
+  }
+
+  // for (const tabExist of tabsExist) {
+  for (const tabId of Object.keys(TABS)) {
+    const tabToBe = TABS[tabId];
+
+    const urlsExist = tabsExist.map(tab => (tab.pendingUrl || tab.url));
+    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.pendingUrl || tabToBe.url", tabToBe.pendingUrl || tabToBe.url, "to be", true, "=>", urlsExist.includes(tabToBe.pendingUrl || tabToBe.url));
+    expect(urlsExist.includes(tabToBe.pendingUrl || tabToBe.url)).toBe(true);
+  }
+}
+
+async function doTest(commands, delay=DEFAULT_DELAY){  
+  let state = { TABS: {}, WINS: {}, REMLIST: [] };
+  for (const command of commands) {
+    state = await doCommand(command, state, delay);
+  }
+
+  if(delay > 0){
+    await sleep(delay);
+  }
+
+  await doCheck(state);
+
+  if(delay > 0){
+    await sleep(delay);
+  }
+}
+
+test.only('[MV2] Random2', async () => {
+  await doTest([
+    { command: 'createWindow', createData: { incognito: true } },
+    { command: 'updateTab', win: 0, tab: 0, updateProperties: { url: `${TEST_SERVER}/0` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/1` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/2` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/3` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/4` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/5` } },
+    { command: 'removeTab', win: 0, tab: 5 },
+    { command: 'restore' },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/6` } },
+  ]);
+}, 30000);
 
 
 
 
-test.only('[MV2] Random', async () => {
+test('[MV2] Random', async () => {
 
   const commands = [
     { command: 'createWindow', createData: { incognito: true } },
@@ -178,11 +389,11 @@ test.only('[MV2] Random', async () => {
 
       if (command.tab !== undefined) {
         const tabs = await worker.evaluate(
-          async (windowId, index) => 
+          async (windowId, index) =>
             new Promise((resolve) => {
-              const _tabs = self.chrome.tabs.query({ windowId, index }, _tabs => resolve(_tabs) );
+              const _tabs = self.chrome.tabs.query({ windowId, index }, _tabs => resolve(_tabs));
             })
-        , command.win.id, command.tab);
+          , command.win.id, command.tab);
         command.tab = tabs[0];
         expect(command.tab).not.toBe(undefined);
       }
@@ -190,8 +401,8 @@ test.only('[MV2] Random', async () => {
 
     if (command.command === 'restore') {
       const tabToRestore = REMLIST.pop();
-      TABS[tabToRestore.id] = tabToRestore;        
-      if(tabToRestore.isWindowClosedByClosingTab || tabToRestore.isWindowClosedByClosingWindow) {
+      TABS[tabToRestore.id] = tabToRestore;
+      if (tabToRestore.isWindowClosedByClosingTab || tabToRestore.isWindowClosedByClosingWindow) {
         // WINS[tabToRestore.windowId] = tabToRestore;
       }
 
@@ -205,9 +416,9 @@ test.only('[MV2] Random', async () => {
     else if (command.command === 'createWindow') {
       var tf = true;
       const win = await worker.evaluate(
-        async (command) => 
-            await self.createWindow(command.createData)
-      , command);
+        async (command) =>
+          await self.createWindow(command.createData)
+        , command);
       WINS[win.id] = win;
     }
     else if (command.command === 'createTab') {
@@ -218,7 +429,7 @@ test.only('[MV2] Random', async () => {
             resolve(tab)
           );
         })
-      , command);
+        , command);
 
       const tab2 = await worker.evaluate(async (tabId) =>
         new Promise((resolve) => {
@@ -226,7 +437,7 @@ test.only('[MV2] Random', async () => {
             resolve(tab)
           );
         })
-      , tab.id);
+        , tab.id);
 
       TABS[tab.id] = tab2;
     }
@@ -237,7 +448,7 @@ test.only('[MV2] Random', async () => {
             resolve(tab)
           );
         })
-      , command);
+        , command);
 
       const tab2 = await worker.evaluate(async (tabId) =>
         new Promise((resolve) => {
@@ -245,7 +456,7 @@ test.only('[MV2] Random', async () => {
             resolve(tab)
           );
         })
-      , command.tab.id);
+        , command.tab.id);
 
       console.log("updateTab", "tab", tab, "tab2", tab2);
 
@@ -253,17 +464,17 @@ test.only('[MV2] Random', async () => {
     }
     else if (command.command === 'removeTab') {
       const nTabs = await worker.evaluate(async (command) =>
-        new Promise((resolve) => 
-          self.chrome.tabs.query({ windowId: command.win.id }, _tabs => resolve(_tabs.length) )
+        new Promise((resolve) =>
+          self.chrome.tabs.query({ windowId: command.win.id }, _tabs => resolve(_tabs.length))
         )
-      , command);
+        , command);
       await worker.evaluate(async (command) =>
         new Promise((resolve) => {
           self.chrome.tabs.remove(command.tab.id, () =>
             resolve()
           );
         })
-      , command);
+        , command);
       REMLIST.push(TABS[command.tab.id]);
       delete TABS[command.tab.id];
       if (nTabs == 1) {
@@ -291,21 +502,21 @@ test.only('[MV2] Random', async () => {
   }));
 
   for (const tabExist of tabsExist) {
-    if(tabExist.windowId === debugWin.id) {
+    if (tabExist.windowId === debugWin.id) {
       continue;
     }
     const urls = Object.keys(TABS).map(tabId => (TABS[tabId].pendingUrl || TABS[tabId].url));
-    console.log("Check", "urls", urls, "includes", "tabExist.url", tabExist.url, "to be", true, "=>", urls.includes(tabExist.url) );
-    expect(urls.includes(tabExist.url)).toBe(true); 
+    console.log("Check", "urls", urls, "includes", "tabExist.url", tabExist.url, "to be", true, "=>", urls.includes(tabExist.url));
+    expect(urls.includes(tabExist.url)).toBe(true);
   }
 
   // for (const tabExist of tabsExist) {
-   for (const tabId of Object.keys(TABS)) {
+  for (const tabId of Object.keys(TABS)) {
     const tabToBe = TABS[tabId];
 
     const urlsExist = tabsExist.map(tab => (tab.pendingUrl || tab.url));
-    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.url", tabToBe.url, "to be", true, "=>", urlsExist.includes(tabToBe.url) );
-    expect(urlsExist.includes(tabToBe.pendingUrl || tabToBe.url)).toBe(true); 
+    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.url", tabToBe.url, "to be", true, "=>", urlsExist.includes(tabToBe.url));
+    expect(urlsExist.includes(tabToBe.pendingUrl || tabToBe.url)).toBe(true);
   }
 
   const pageSourceHTML = await debugPage.content();
@@ -314,7 +525,6 @@ test.only('[MV2] Random', async () => {
   await debugPage.screenshot({ path: `${pathStem}.png` });
 
 });
-
 
 
 test('[MV2] Single incognito tab open -> close -> reopen', async () => {

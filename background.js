@@ -6,10 +6,11 @@ var lastActiveWinId;
 
 // chrome.tabs.create({ url: chrome.runtime.getURL("debug.html") });
 
-self.debug_command_restore = function(){
-    command_restore();
+self.debug_command_restore = async () => {
+    await command_restore();
     return true;
 }
+
 
 self.getAllTabs = function(){
     return new Promise((resolve) => {
