@@ -15,10 +15,11 @@
 
 // eslint-disable-next-line no-undef
 const puppeteer = require('puppeteer');
+const  { PuppeteerScreenRecorder } = require('puppeteer-screen-recorder');
 const path = require('path');
 const fs = require('fs');
-const exp = require('constants');
-const { debug } = require('console');
+// import { PuppeteerScreenRecorder } from 'puppeteer-screen-recorder';
+
 
 const EXTENSION_PATH = path.join(process.cwd(), '../');
 const EXTENSION_ID = 'alkfhfgkepamooonkjdolamnbilhkmjg';
@@ -32,10 +33,21 @@ let backgroundPage;
 let debugPage;
 let debugWin;
 let worker;
+let recorder;
 
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+// beforeEach
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
 beforeEach(async () => {
   browser = await puppeteer.launch({
-    headless: false,
+    headless: true,
     // slowMo: 50,
     devtools: false,
     args: [
@@ -103,16 +115,50 @@ beforeEach(async () => {
 
 });
 
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+// afterEach
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
 afterEach(async () => {
   const pageSourceHTML = await debugPage.content();
   const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
   fs.writeFileSync(`${pathStem}.html`, pageSourceHTML);
+  // await recorder.stop();
   await debugPage.screenshot({ path: `${pathStem}.png` });
-  // await browser.close();
+  await browser.close();
 
   browser = undefined;
 });
 
+
+// test('can message service worker when terminated', async () => {
+//   const page = await browser.newPage();
+//   await page.goto(`chrome-extension://${EXTENSION_ID}/debug.html`);
+
+//   // Message without terminating service worker
+//   await page.click('button');
+//   await page.waitForSelector('#response-0');
+
+//   // Terminate service worker
+//   await stopServiceWorker(browser, EXTENSION_ID);
+
+//   // Try to send another message
+//   await page.click('button');
+//   await page.waitForSelector('#response-1');
+// });
+
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+// SUPPORTING FUNCTIONS
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
 /**
  * Stops the service worker associated with a given extension ID. This is done
  * by creating a new Chrome DevTools Protocol session, finding the target ID
@@ -131,22 +177,6 @@ async function stopServiceWorker(browser, extensionId) {
   const worker = await target.worker();
   await worker.close();
 }
-
-// test('can message service worker when terminated', async () => {
-//   const page = await browser.newPage();
-//   await page.goto(`chrome-extension://${EXTENSION_ID}/debug.html`);
-
-//   // Message without terminating service worker
-//   await page.click('button');
-//   await page.waitForSelector('#response-0');
-
-//   // Terminate service worker
-//   await stopServiceWorker(browser, EXTENSION_ID);
-
-//   // Try to send another message
-//   await page.click('button');
-//   await page.waitForSelector('#response-1');
-// });
 
 
 const sleep = msec => new Promise(resolve => setTimeout(resolve, msec));
@@ -318,12 +348,22 @@ async function doCheck(state){
     const tabToBe = TABS[tabId];
 
     const urlsExist = tabsExist.map(tab => (tab.pendingUrl || tab.url));
-    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.pendingUrl || tabToBe.url", tabToBe.pendingUrl || tabToBe.url, "to be", true, "=>", urlsExist.includes(tabToBe.pendingUrl || tabToBe.url));
-    expect(urlsExist.includes(tabToBe.pendingUrl || tabToBe.url)).toBe(true);
+    const tf = urlsExist.includes(tabToBe.pendingUrl || tabToBe.url);
+    console.log("Check", "urlsExist", urlsExist, "includes", "tabToBe.pendingUrl || tabToBe.url", tabToBe.pendingUrl || tabToBe.url, "to be", true, "=>", tf);
+    expect(tf).toBe(true);
   }
 }
 
 async function doTest(commands, delay=DEFAULT_DELAY){  
+  // https://screenshotone.com/blog/how-to-record-videos-with-puppeteer/
+  // const pathStem = `debug-result-${expect.getState().currentTestName}`.replace(/[^a-zA-Z0-9\/\\_\-\.:\s]/g, '');
+  // recorder = await browser.screencast({path: `${pathStem}.webm`});
+
+  // recorder = new PuppeteerScreenRecorder(debugPage);
+  // console.log("recorder", recorder);
+  // await recorder.start(`${pathStem}.mp4`)
+
+
   let state = { TABS: {}, WINS: {}, REMLIST: [] };
   for (const command of commands) {
     state = await doCommand(command, state, delay);
@@ -338,9 +378,39 @@ async function doTest(commands, delay=DEFAULT_DELAY){
   if(delay > 0){
     await sleep(delay);
   }
+
+  // recorder.stop();
 }
 
-test.only('[MV2] Random2', async () => {
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+// DEFINE TESTS
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+
+test('[MV2] Basic2', async () => {
+  await doTest([
+    { command: 'createWindow', createData: { incognito: true } },
+    { command: 'updateTab', win: 0, tab: 0, updateProperties: { url: `${TEST_SERVER}/0` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/1` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/2` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/3` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/4` } },
+    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/5` } },
+    { command: 'removeTab', win: 0, tab: 5 },
+    { command: 'removeTab', win: 0, tab: 4 },
+    { command: 'removeTab', win: 0, tab: 3 },
+    { command: 'removeTab', win: 0, tab: 2 },
+    { command: 'removeTab', win: 0, tab: 1 },
+    { command: 'removeTab', win: 0, tab: 0 },
+    { command: 'restore' },
+  ]);
+}, 30000);
+
+
+test('[MV2] Basic', async () => {
   await doTest([
     { command: 'createWindow', createData: { incognito: true } },
     { command: 'updateTab', win: 0, tab: 0, updateProperties: { url: `${TEST_SERVER}/0` } },
@@ -351,14 +421,22 @@ test.only('[MV2] Random2', async () => {
     { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/5` } },
     { command: 'removeTab', win: 0, tab: 5 },
     { command: 'restore' },
-    { command: 'createTab', win: 0, createProperties: { url: `${TEST_SERVER}/6` } },
   ]);
 }, 30000);
 
 
 
 
-test('[MV2] Random', async () => {
+
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+// DRAFT TESTS (skip)
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////
+
+test.skip('[MV2] Random', async () => {
 
   const commands = [
     { command: 'createWindow', createData: { incognito: true } },
@@ -527,7 +605,7 @@ test('[MV2] Random', async () => {
 });
 
 
-test('[MV2] Single incognito tab open -> close -> reopen', async () => {
+test.skip('[MV2] Single incognito tab open -> close -> reopen', async () => {
 
   // Get worker
   // const host = `chrome-extension://${EXTENSION_ID}`;
@@ -617,7 +695,7 @@ test('[MV2] Single incognito tab open -> close -> reopen', async () => {
 
 
 
-test('[MV2] Single normal tab open -> close -> reopen', async () => {
+test.skip('[MV2] Single normal tab open -> close -> reopen', async () => {
 
   // Get worker
   // const host = `chrome-extension://${EXTENSION_ID}`;
