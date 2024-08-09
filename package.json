@@ -1,9 +1,11 @@
 {
   "type": "module",
   "scripts": {
+    "serv": "cd test && node dummy.js &",
     "test": "cd test && jest ."
   },
   "devDependencies": {
+    "express": "^4.19.2",
     "jest": "^29.7.0",
     "puppeteer": "^23.0.1"
   }
