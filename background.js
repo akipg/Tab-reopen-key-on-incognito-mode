@@ -3,6 +3,7 @@ var WINS = {}
 var REMLIST = []
 var lastActiveTabId;
 var lastActiveWinId;
+var WINMAP = {};
 
 async function main() {
     await getAllTabs();
@@ -11,6 +12,7 @@ async function main() {
     // onCreated event
     chrome.tabs.onCreated.addListener(tab => {
         rewriteTABSbytab(tab);
+        getAllWins();
     });
 
     // onUpdated event
@@ -47,8 +49,10 @@ async function main() {
         let rem = {};
         REMLIST.unshift(rem);
         Object.assign(rem, TABS[tabId]);
+        const winId = TABS[tabId].windowId;
+        WINS[winId].nTabs -= 1;
         // when closing a window
-        if (removeInfo.isWindowClosing) {
+        if (removeInfo.isWindowClosing || WINS[winId].nTabs == 0) {
             rem.isWindowClosed = true;
             rem.tabId = tabId;
             rem.active = TABS[tabId].active;
@@ -101,8 +105,11 @@ function getAllWins() {
         chrome.windows.getAll({}, wins => {
             for (win of wins) {
                 WINS[win.id] = win;
+                chrome.tabs.query({ windowId: win.id }, tabs => {
+                    WINS[win.id].nTabs = tabs.length;
+                    if(wins[wins.length-1].id == win.id) resolve();
+                });
             }
-            resolve();
         });
     });
 }
@@ -175,6 +182,8 @@ async function command_restore(tab_command) {
                 // create a window
                 chrome.windows.create(createOption, win => {
                     _newWinId = win.id;
+                    WINMAP[_winId] = _newWinId;
+                    console.log("WINMAP", WINMAP);
                     resolve();
                 });
             });
@@ -186,12 +195,68 @@ async function command_restore(tab_command) {
     }
     // in incognito and tab closed
     else {
-        chrome.tabs.create({
-            active: true, //(rem_last.id == lastActiveTabId),
-            index: rem_last.index,
-            url: rem_last.url,
-            windowId: rem_last.windowId
-        })
+        if(WINMAP[rem_last.windowId] == undefined) {
+            windowId = rem_last.windowId;
+        }else{
+            windowId = WINMAP[rem_last.windowId];
+        }
+        // check if the window is exist
+        const isWinExist = await new Promise((resolve) =>{
+            chrome.windows.get(windowId, win => {
+                if(!win || chrome.runtime.lastError){
+                    console.log("window is not exist");
+                    resolve(false);
+                }
+                else{
+                    resolve(true);
+                }
+            });
+        });
+
+        if(!isWinExist){
+            // Create a missing window
+            const createOption = {
+                url: rem_last.url,
+                incognito: true,
+                focused: true,
+            }
+            // Try to update a createOption
+            try{
+                for(const tryWinId of [windowId, rem_last.windowId]){
+                    if(tryWinId in WINS){
+                        Object.assign(createOption, {
+                            height: WINS[tryWinId].height,
+                            width: WINS[tryWinId].width,
+                            left: WINS[tryWinId].left,
+                            top: WINS[tryWinId].top,
+                            type: WINS[tryWinId].type,
+                        });
+                        break;
+                    }
+                }
+            } catch(e){
+                console.error("Failed to update createOption", e);
+
+            }
+            // Create a missing window
+            const newWin = await new Promise((resolove)=>{
+                chrome.windows.create(createOption, win => resolove(win));
+            });
+            // Update WINMAP
+            WINMAP[rem_last.windowId] = newWin.id;
+            WINMAP[windowId] = newWin.id;
+        }else{
+            // activate win
+            chrome.windows.update(windowId, {focused: true}, win => {
+                // Restore tab in the exsiting window
+                chrome.tabs.create({
+                    active: true, //(rem_last.id == lastActiveTabId),
+                    index: rem_last.index,
+                    url: rem_last.url,
+                    windowId // : rem_last.windowId
+                });
+            });
+        }
     }
 }
 
